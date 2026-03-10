@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%
 
--module(erlk_ct_guard).
+-module(erlkoenig_nft_ct_guard).
 -moduledoc """
 Automatic threat detection and response using conntrack events.
 
@@ -49,9 +49,9 @@ Configuration (in firewall.term):
 
 Usage:
 
-    erlk_ct_guard:start_link(Config).
-    erlk_ct_guard:stats().
-    erlk_ct_guard:banned().
+    erlkoenig_nft_ct_guard:start_link(Config).
+    erlkoenig_nft_ct_guard:stats().
+    erlkoenig_nft_ct_guard:banned().
 """.
 
 -behaviour(gen_server).
@@ -69,8 +69,8 @@ Usage:
 -define(DEFAULT_WHITELIST, []).
 
 %% ETS tables
--define(GUARD_CONNS, erlk_ct_guard_conns).  %% {SrcIP, Timestamp, DstPort}
--define(GUARD_BANS,  erlk_ct_guard_bans).   %% {SrcIP, BannedAt, ExpiresAt, Reason}
+-define(GUARD_CONNS, erlkoenig_nft_ct_guard_conns).  %% {SrcIP, Timestamp, DstPort}
+-define(GUARD_BANS,  erlkoenig_nft_ct_guard_bans).   %% {SrcIP, BannedAt, ExpiresAt, Reason}
 
 %% --- Public API ---
 
@@ -111,9 +111,9 @@ init(Config) ->
 
     %% Create ETS tables
     %% Conn tracking: ordered_set for efficient time-range queries
-    ets:new(?GUARD_CONNS, [named_table, ordered_set, public]),
+    _ = ets:new(?GUARD_CONNS, [named_table, ordered_set, public]),
     %% Ban tracking: set keyed by IP
-    ets:new(?GUARD_BANS, [named_table, set, public]),
+    _ = ets:new(?GUARD_BANS, [named_table, set, public]),
 
     %% Subscribe to conntrack events
     pg:join(erlkoenig_nft, ct_events, self()),
@@ -167,7 +167,7 @@ handle_call(banned, _From, State) ->
     Now = erlang:system_time(second),
     Bans = ets:foldl(fun({IP, BannedAt, ExpiresAt, Reason}, Acc) ->
         Remaining = max(0, ExpiresAt - Now),
-        [#{ip => erlk_ip:format(IP),
+        [#{ip => erlkoenig_nft_ip:format(IP),
            ip_raw => IP,
            reason => Reason,
            banned_at => BannedAt,
@@ -245,8 +245,8 @@ handle_info({unban, SrcIP}, #{bans_expired := Exp} = State) ->
         [{_, _, _, _}] ->
             ets:delete(?GUARD_BANS, SrcIP),
             %% Unban in firewall
-            try_unban(SrcIP),
-            logger:notice("[ct_guard] Auto-unban ~s (expired)", [erlk_ip:format(SrcIP)]),
+            _ = try_unban(SrcIP),
+            logger:notice("[ct_guard] Auto-unban ~s (expired)", [erlkoenig_nft_ip:format(SrcIP)]),
             {noreply, State#{bans_expired := Exp + 1}};
         [] ->
             {noreply, State}
@@ -320,7 +320,7 @@ ban_ip(SrcIP, Reason, #{ban_duration := Duration,
             DetectCount = maps:get(StatKey, State, 0),
 
             logger:warning("[ct_guard] BANNED ~s reason=~p duration=~ps",
-                          [erlk_ip:format(SrcIP), Reason, Duration]),
+                          [erlkoenig_nft_ip:format(SrcIP), Reason, Duration]),
 
             %% Broadcast alert
             broadcast({ct_guard_ban, #{
@@ -421,7 +421,7 @@ cleanup_bans(Now) ->
         case ExpiresAt =< Now of
             true ->
                 ets:delete(?GUARD_BANS, IP),
-                try_unban(IP),
+                _ = try_unban(IP),
                 Count + 1;
             false ->
                 Count
@@ -434,7 +434,7 @@ cleanup_bans(Now) ->
 
 normalize_whitelist(List) ->
     lists:filtermap(fun(Entry) ->
-        case erlk_ip:normalize(Entry) of
+        case erlkoenig_nft_ip:normalize(Entry) of
             {ok, Bin} -> {true, Bin};
             {error, _} -> false
         end
